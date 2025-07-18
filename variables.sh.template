@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# =============================================================================
+# Template Variables for Documentation Generation
+# =============================================================================
+# This file contains placeholder values used by generate_docs.sh to create
+# documentation from templates. These are NOT real values.
+#
+# To use:
+# 1. Copy this file: cp variables.sh.template variables.sh
+# 2. Edit variables.sh with your actual values (optional)
+# 3. Run: ./scripts/generate_docs.sh
+# =============================================================================
+
+# Project Configuration
+export EXAMPLE_PROJECT_ID="your-project-id"
+export EXAMPLE_REGION="us-central1"
+export EXAMPLE_CRAWLER_ID="crawler-basic"
+
+# Domain Configuration
+export EXAMPLE_DOMAIN="example.com"
+export EXAMPLE_PAGE_LIMIT="10"
+
+# API Configuration
+export EXAMPLE_API_KEY="fc-your-api-key-here"
+
+# Default Values
+export DEFAULT_CRAWLER_ID="crawler-basic"
+export DEFAULT_REGION="us-central1"
+export DEFAULT_DATASET="crawler"
+
+# Statistics (for README badges)
+export PRODUCTION_SUCCESS_RATE="91.2"
+export MESSAGES_PROCESSED="9,876"
+
+# Testing Examples
+export TEST_DOMAIN_1="example.com"
+export TEST_DOMAIN_2="www.woodmac.com"
+export TEST_JOB_ID="my-job-001"

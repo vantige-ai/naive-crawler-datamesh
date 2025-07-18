@@ -1,0 +1,51 @@
+# --- CORE CONFIGURATION (EDIT THESE VALUES) ---
+
+# A unique ID for this crawler instance. Use lowercase letters, numbers, and hyphens.
+export CRAWLER_ID="{{DEFAULT_CRAWLER_ID}}"
+
+# The root domain to crawl.
+export DOMAIN_TO_CRAWL="{{EXAMPLE_DOMAIN}}"
+
+# Max pages to map using Firecrawl.
+export PAGE_LIMIT="10"
+
+# The GCP Project ID.
+export PROJECT_ID="{{EXAMPLE_PROJECT_ID}}"
+export REGION="{{DEFAULT_REGION}}"
+
+# IMPORTANT: You must set this value before deploying.
+export FIRECRAWL_API_KEY="{{EXAMPLE_API_KEY}}"
+
+
+# --- DERIVED RESOURCE NAMES (DO NOT EDIT) ---
+# These names are constructed from the CRAWLER_ID for consistency.
+
+# Service Accounts
+export MAPPER_SA_NAME="${CRAWLER_ID}-mapper-sa"
+export PROCESSOR_SA_NAME="${CRAWLER_ID}-processor-sa"
+export MAPPER_SA_EMAIL="${MAPPER_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+export PROCESSOR_SA_EMAIL="${PROCESSOR_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+# Cloud Run Services
+export URL_MAPPER_SERVICE_NAME="${CRAWLER_ID}-mapper-svc"
+export PAGE_PROCESSOR_SERVICE_NAME="${CRAWLER_ID}-processor-svc"
+
+# Pub/Sub Topics
+export INPUT_TOPIC_ID="${CRAWLER_ID}-input-topic"
+export URL_TOPIC_ID="${CRAWLER_ID}-urls-topic"
+export OUTPUT_TOPIC_ID="${CRAWLER_ID}-output-topic"
+
+# Pub/Sub Subscriptions
+export MAPPER_SUBSCRIPTION_ID="${CRAWLER_ID}-mapper-sub"
+export PROCESSOR_SUBSCRIPTION_ID="${CRAWLER_ID}-processor-sub"
+
+# BigQuery Configuration
+export BQ_DATASET="crawler"  # Standardized dataset name
+export BQ_RAW_TABLE="${CRAWLER_ID//-/_}_raw"    # Raw Pub/Sub messages with metadata (crawler_basic_raw)
+export BQ_PROCESSED_TABLE="${CRAWLER_ID//-/_}_processed"  # Structured processed data
+
+# BigQuery Subscriptions (for direct Pub/Sub -> BigQuery integration)
+export RAW_DATA_SUBSCRIPTION_ID="${CRAWLER_ID}-raw-data-sub"
+
+# Security and IAM Configuration
+export ALLOW_UNAUTHENTICATED="true"   # Required: Pub/Sub push subscriptions need unauthenticated access with OIDC tokens

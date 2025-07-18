@@ -1,0 +1,53 @@
+# Configuration files with secrets
+config.sh
+config-*.sh
+variables.sh
+settings.md
+
+# Backup files
+.backup/
+*.backup
+
+# Service account keys and credentials
+*.json
+!package.json
+!package-lock.json
+credentials/
+secrets/
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Build directories
+build/
+dist/

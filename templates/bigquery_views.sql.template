@@ -1,0 +1,242 @@
+-- BigQuery Views for Unified Crawler
+-- This script creates views to unpack and analyze data from the raw crawler tables
+-- Run this in BigQuery to set up all analytics views
+
+-- 1. Main parsed messages view - extracts all fields from JSON data
+CREATE OR REPLACE MATERIALIZED VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.parsed_messages` AS
+SELECT 
+  subscription_name,
+  message_id,
+  publish_time,
+  -- Extract fields from the JSON data column
+  JSON_VALUE(data, '$.url') as url,
+  JSON_VALUE(data, '$.crawler_id') as crawler_id,
+  JSON_VALUE(data, '$.domain') as domain,
+  JSON_VALUE(data, '$.status') as status,
+  -- Handle nanosecond precision timestamps by truncating to microseconds
+  PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ', SUBSTR(JSON_VALUE(data, '$.timestamp'), 1, 27) || 'Z') as processed_timestamp,
+  JSON_VALUE(data, '$.markdown') as markdown_content,
+  LENGTH(JSON_VALUE(data, '$.markdown')) as markdown_length,
+  -- Calculate processing time
+  TIMESTAMP_DIFF(
+    publish_time, 
+    PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E6SZ', SUBSTR(JSON_VALUE(data, '$.timestamp'), 1, 27) || 'Z'), 
+    SECOND
+  ) as processing_seconds,
+  -- Extract attributes if any
+  attributes
+FROM 
+  `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.{{DEFAULT_CRAWLER_ID//-/_}}_raw`
+WHERE 
+  JSON_VALUE(data, '$.url') IS NOT NULL
+;
+
+-- 2. Successful crawls only - filtered view for analysis
+CREATE OR REPLACE VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.successful_crawls` AS
+SELECT 
+  url,
+  crawler_id,
+  domain,
+  processed_timestamp,
+  markdown_content,
+  markdown_length,
+  publish_time,
+  processing_seconds
+FROM 
+  `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.parsed_messages`
+WHERE 
+  status = 'success'
+  AND markdown_length > 0
+;
+
+-- 3. Error analysis view - for debugging failed crawls
+CREATE OR REPLACE MATERIALIZED VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.error_analysis` AS
+SELECT 
+  JSON_VALUE(data, '$.crawler_id') as crawler_id,
+  JSON_VALUE(data, '$.domain') as domain,
+  JSON_VALUE(data, '$.url') as failed_url,
+  JSON_VALUE(data, '$.markdown') as error_message,
+  publish_time,
+  DATE(publish_time) as error_date,
+  EXTRACT(HOUR FROM publish_time) as error_hour
+FROM 
+  `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.{{DEFAULT_CRAWLER_ID//-/_}}_raw`
+WHERE 
+  JSON_VALUE(data, '$.status') = 'error'
+;
+
+-- 4. Crawler statistics by day
+CREATE OR REPLACE MATERIALIZED VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.daily_stats` AS
+SELECT 
+  JSON_VALUE(data, '$.crawler_id') as crawler_id,
+  JSON_VALUE(data, '$.domain') as domain,
+  DATE(publish_time) as crawl_date,
+  COUNT(*) as total_pages,
+  COUNTIF(JSON_VALUE(data, '$.status') = 'success') as successful_pages,
+  COUNTIF(JSON_VALUE(data, '$.status') = 'error') as failed_pages,
+  AVG(LENGTH(JSON_VALUE(data, '$.markdown'))) as avg_content_length,
+  MAX(LENGTH(JSON_VALUE(data, '$.markdown'))) as max_content_length,
+  MIN(publish_time) as first_crawl_time,
+  MAX(publish_time) as last_crawl_time
+FROM 
+  `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.{{DEFAULT_CRAWLER_ID//-/_}}_raw`
+WHERE 
+  JSON_VALUE(data, '$.url') IS NOT NULL
+GROUP BY 
+  1, 2, 3
+;
+
+-- 5. URL pattern analysis - understand what types of URLs are being crawled
+CREATE OR REPLACE MATERIALIZED VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.url_patterns` AS
+WITH parsed_data AS (
+  SELECT 
+    JSON_VALUE(data, '$.crawler_id') as crawler_id,
+    JSON_VALUE(data, '$.domain') as domain,
+    JSON_VALUE(data, '$.url') as url,
+    JSON_VALUE(data, '$.status') as status,
+    LENGTH(JSON_VALUE(data, '$.markdown')) as markdown_length
+  FROM 
+    `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.{{DEFAULT_CRAWLER_ID//-/_}}_raw`
+  WHERE 
+    JSON_VALUE(data, '$.url') IS NOT NULL
+)
+SELECT 
+  crawler_id,
+  domain,
+  -- Extract URL components
+  REGEXP_EXTRACT(url, r'^https?://([^/]+)') as host,
+  REGEXP_EXTRACT(url, r'^https?://[^/]+(/[^?#]*)') as path,
+  CASE 
+    WHEN url LIKE '%.pdf' THEN 'PDF'
+    WHEN url LIKE '%.jpg' OR url LIKE '%.jpeg' OR url LIKE '%.png' OR url LIKE '%.gif' THEN 'Image'
+    WHEN url LIKE '%.xml' THEN 'XML'
+    WHEN url LIKE '%.json' THEN 'JSON'
+    WHEN REGEXP_CONTAINS(url, r'\.(html?|php|asp|jsp)$') THEN 'HTML'
+    WHEN REGEXP_CONTAINS(url, r'\?') THEN 'Dynamic'
+    ELSE 'Other'
+  END as url_type,
+  status,
+  COUNT(*) as count,
+  AVG(markdown_length) as avg_content_length
+FROM 
+  parsed_data
+GROUP BY 
+  1, 2, 3, 4, 5, 6
+;
+
+-- 6. Hourly crawl performance - for monitoring and optimization
+CREATE OR REPLACE VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.hourly_performance` AS
+SELECT 
+  crawler_id,
+  domain,
+  TIMESTAMP_TRUNC(publish_time, HOUR) as hour,
+  COUNT(*) as pages_processed,
+  AVG(processing_seconds) as avg_processing_time,
+  APPROX_QUANTILES(processing_seconds, 100)[OFFSET(50)] as median_processing_time,
+  APPROX_QUANTILES(processing_seconds, 100)[OFFSET(95)] as p95_processing_time,
+  SUM(markdown_length) as total_content_bytes,
+  COUNTIF(status = 'error') as errors
+FROM 
+  `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.parsed_messages`
+GROUP BY 
+  1, 2, 3
+;
+
+-- 7. Domain summary - high-level view per domain
+CREATE OR REPLACE MATERIALIZED VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.domain_summary` AS
+SELECT 
+  domain,
+  crawler_id,
+  MIN(DATE(publish_time)) as first_crawl_date,
+  MAX(DATE(publish_time)) as last_crawl_date,
+  COUNT(DISTINCT DATE(publish_time)) as days_crawled,
+  COUNT(*) as total_pages_crawled,
+  COUNT(DISTINCT url) as unique_urls,
+  COUNTIF(status = 'success') as successful_crawls,
+  COUNTIF(status = 'error') as failed_crawls,
+  SAFE_DIVIDE(COUNTIF(status = 'error'), COUNT(*)) * 100 as overall_error_rate,
+  AVG(markdown_length) as avg_page_size,
+  SUM(markdown_length) / 1024 / 1024 as total_content_mb
+FROM 
+  `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.parsed_messages`
+GROUP BY 
+  1, 2
+;
+
+-- 8. Recent activity view - last 24 hours
+CREATE OR REPLACE VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.recent_activity` AS
+SELECT 
+  crawler_id,
+  domain,
+  url,
+  status,
+  markdown_length,
+  publish_time,
+  TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), publish_time, MINUTE) as minutes_ago
+FROM 
+  `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.parsed_messages`
+WHERE 
+  publish_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+;
+
+-- 9. Content analysis - analyze the actual markdown content
+CREATE OR REPLACE VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.content_analysis` AS
+SELECT 
+  crawler_id,
+  domain,
+  url,
+  markdown_length,
+  -- Count various markdown elements
+  ARRAY_LENGTH(REGEXP_EXTRACT_ALL(markdown_content, r'#+ ')) as header_count,
+  ARRAY_LENGTH(REGEXP_EXTRACT_ALL(markdown_content, r'\[([^\]]+)\]\(([^)]+)\)')) as link_count,
+  ARRAY_LENGTH(REGEXP_EXTRACT_ALL(markdown_content, r'!\[([^\]]*)\]\(([^)]+)\)')) as image_count,
+  ARRAY_LENGTH(REGEXP_EXTRACT_ALL(markdown_content, r'```')) / 2 as code_block_count,
+  ARRAY_LENGTH(SPLIT(markdown_content, '\n')) as line_count,
+  -- Calculate content density
+  ARRAY_LENGTH(SPLIT(REGEXP_REPLACE(markdown_content, r'[^a-zA-Z0-9\s]', ''), ' ')) as word_count,
+  publish_time
+FROM 
+  `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.parsed_messages`
+WHERE 
+  status = 'success'
+  AND markdown_length > 0
+;
+
+-- 10. Multi-crawler comparison view
+CREATE OR REPLACE VIEW `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.crawler_comparison` AS
+SELECT 
+  crawler_id,
+  COUNT(DISTINCT domain) as domains_crawled,
+  COUNT(*) as total_pages,
+  COUNTIF(status = 'success') as successful_pages,
+  COUNTIF(status = 'error') as failed_pages,
+  SAFE_DIVIDE(COUNTIF(status = 'error'), COUNT(*)) * 100 as error_rate,
+  AVG(markdown_length) as avg_content_size,
+  SUM(markdown_length) / 1024 / 1024 / 1024 as total_content_gb,
+  MIN(publish_time) as first_activity,
+  MAX(publish_time) as last_activity,
+  SAFE_DIVIDE(COUNT(*), TIMESTAMP_DIFF(MAX(publish_time), MIN(publish_time), HOUR)) as pages_per_hour
+FROM 
+  `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.parsed_messages`
+GROUP BY 
+  1
+;
+
+-- Example queries to use these views:
+
+-- Get today's crawl summary for crawler-basic
+-- SELECT * FROM `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.daily_stats` 
+-- WHERE crawler_id = 'crawler-basic' AND crawl_date = CURRENT_DATE();
+
+-- Find all errors in the last hour
+-- SELECT * FROM `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.error_analysis` 
+-- WHERE publish_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR);
+
+-- Analyze content from example.com
+-- SELECT * FROM `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.content_analysis`
+-- WHERE domain = 'www.example.com'
+-- ORDER BY word_count DESC
+-- LIMIT 100;
+
+-- Compare performance across different crawlers
+-- SELECT * FROM `{{EXAMPLE_PROJECT_ID}}.{{DEFAULT_DATASET}}.crawler_comparison`;
