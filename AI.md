@@ -171,6 +171,36 @@ All resources prefixed with `CRAWLER_ID`:
 3. **Validate security** - Ensure no sensitive data in templates
 4. **Update this guide** - Keep AI.md current with changes
 
+### ⚠️ Common Deployment Issues & Solutions
+
+#### Configuration File Setup
+- **Problem**: Variables like `MAPPER_SA_NAME`, `INPUT_TOPIC_ID` not defined, causing deployment failures
+- **Solution**: Use the complete `config.sh.template` as base, not just `.env.example`
+- **Root Cause**: `.env.example` only has core config; full template includes derived resource names
+- **Fix**: Copy from `config.sh.template` and update with real values
+
+#### Timeout and Long-Running Operations
+- **Problem**: CLI tools timeout during Cloud Run builds (typically 2-5 minutes)
+- **Expected Behavior**: Scripts have 60-minute internal timeouts and retry logic
+- **What to do**: Use extended timeouts (10+ minutes) for deployment commands
+- **Don't panic**: If tool times out, deployment likely continues in background
+- **Verification**: Check Cloud Run console or re-run deployment script
+
+#### Authentication and IAM Issues
+- **Problem**: 403 errors in Cloud Run logs after deployment
+- **Root Cause**: Organization policies may prevent `--allow-unauthenticated` flag
+- **Manual Fix Required**: User must configure authentication in Cloud Console
+- **Process**: Go to Cloud Run service → Security tab → Adjust authentication settings
+- **Alternative**: Use IAM policy bindings for specific service accounts
+- **Don't attempt**: Multiple automated IAM fixes - let user handle via Console
+
+#### BigQuery Write Metadata
+- **Critical Step**: Cannot be automated via gcloud CLI as of 2024/2025
+- **User Action Required**: Manual configuration in Cloud Console
+- **Timing**: Must be done after infrastructure setup, before testing
+- **How to Guide**: Provide direct console link and step-by-step instructions
+- **Verification**: Check for data flow to BigQuery tables after configuration
+
 ## 🚀 Success Indicators
 
 ### Properly Configured System
